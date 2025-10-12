@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	storage "github.com/rammyblog/monitor-bee/internal/storage/sql"
 )
 
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -64,7 +64,7 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
-func Auth(db *sql.DB) func(http.Handler) http.Handler {
+func Auth(store *storage.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -94,19 +94,16 @@ func Auth(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			userID := int(claims["user_id"].(float64))
+			userID := int32(claims["user_id"].(float64))
 
-			// Verify user still exists
-			var exists bool
-			err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID).Scan(&exists)
+			ctx := r.Context()
+			exists, err := store.UserExists(ctx, userID)
 			if err != nil || !exists {
 				http.Error(w, "User not found", http.StatusUnauthorized)
 				return
 			}
 
-			type contextKey string
-			const userIDKey contextKey = "userID"
-			ctx := context.WithValue(r.Context(), userIDKey, userID)
+			ctx = context.WithValue(ctx, "userID", int(userID))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

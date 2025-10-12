@@ -12,7 +12,7 @@ import (
 	"github.com/rammyblog/monitor-bee/internal/config"
 	"github.com/rammyblog/monitor-bee/internal/handlers"
 	"github.com/rammyblog/monitor-bee/internal/middleware"
-	"github.com/rammyblog/monitor-bee/internal/storage"
+	storage "github.com/rammyblog/monitor-bee/internal/storage/sql"
 )
 
 func main() {
@@ -24,16 +24,16 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Initialize storage
-	db, err := storage.New(cfg.DatabaseURL)
+	store, err := storage.NewStore(cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("failed to initialize database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer store.Close()
 
 	// Setup handlers
 	h := &handlers.Handler{
-		DB:     db,
+		Store:  store,
 		Logger: logger,
 	}
 
@@ -52,7 +52,7 @@ func main() {
 	protected.HandleFunc("GET /api/users", h.ListUsers)
 
 	// Apply auth middleware to protected routes
-	mux.Handle("/api/", middleware.Auth(h.DB)(protected))
+	mux.Handle("/api/", middleware.Auth(store)(protected))
 
 	// Apply global middleware
 	handler := middleware.CORS(

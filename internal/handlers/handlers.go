@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -9,18 +8,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+
+	storage "github.com/rammyblog/monitor-bee/internal/storage/sql"
 )
 
 type Handler struct {
-	DB     *sql.DB
+	Store  *storage.Store
 	Logger *slog.Logger
-}
-
-type User struct {
-	ID       int    `json:"id"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Password string `json:"-"`
 }
 
 type LoginRequest struct {
@@ -35,8 +29,8 @@ type RegisterRequest struct {
 }
 
 type AuthResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
+	Token string       `json:"token"`
+	User  storage.User `json:"user"`
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
@@ -51,9 +45,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user User
-	err := h.DB.QueryRow("SELECT id, email, name, password FROM users WHERE email = $1", req.Email).
-		Scan(&user.ID, &user.Email, &user.Name, &user.Password)
+	ctx := r.Context()
+	user, err := h.Store.GetUser(ctx, req.Email)
 	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
@@ -64,7 +57,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.generateToken(user.ID, user.Email)
+	token, err := h.generateToken(int(user.ID), user.Email)
 	if err != nil {
 		h.Logger.Error("failed to generate token", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -93,11 +86,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID int
-	err = h.DB.QueryRow(
-		"INSERT INTO users (email, name, password) VALUES ($1, $2, $3) RETURNING id",
-		req.Email, req.Name, string(hashedPassword),
-	).Scan(&userID)
+	ctx := r.Context()
+	user, err := h.Store.CreateUser(ctx, storage.CreateUserParams{
+		Email:    req.Email,
+		Name:     req.Name,
+		Password: string(hashedPassword),
+	})
 	if err != nil {
 		h.Logger.Error("failed to create user", "error", err)
 		http.Error(w, "Email already exists", http.StatusConflict)
@@ -105,17 +99,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate JWT token
-	token, err := h.generateToken(userID, req.Email)
+	token, err := h.generateToken(int(user.ID), user.Email)
 	if err != nil {
 		h.Logger.Error("failed to generate token", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-
-	user := User{
-		ID:    userID,
-		Email: req.Email,
-		Name:  req.Name,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -129,9 +117,8 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value("userID").(int)
 
-	var user User
-	err := h.DB.QueryRow("SELECT id, email, name FROM users WHERE id = $1", userID).
-		Scan(&user.ID, &user.Email, &user.Name)
+	ctx := r.Context()
+	user, err := h.Store.GetUserByID(ctx, int32(userID))
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -153,7 +140,12 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.DB.Exec("UPDATE users SET name = $1, email = $2 WHERE id = $3", req.Name, req.Email, userID)
+	ctx := r.Context()
+	err := h.Store.UpdateUser(ctx, storage.UpdateUserParams{
+		ID:    int32(userID),
+		Name:  req.Name,
+		Email: req.Email,
+	})
 	if err != nil {
 		h.Logger.Error("failed to update profile", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -164,22 +156,12 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.Query("SELECT id, email, name FROM users ORDER BY id")
+	ctx := r.Context()
+	users, err := h.Store.ListUsers(ctx)
 	if err != nil {
 		h.Logger.Error("failed to list users", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-
-	var users []User
-	for rows.Next() {
-		var user User
-		if err := rows.Scan(&user.ID, &user.Email, &user.Name); err != nil {
-			h.Logger.Error("failed to scan user", "error", err)
-			continue
-		}
-		users = append(users, user)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
