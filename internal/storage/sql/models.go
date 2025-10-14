@@ -8,6 +8,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Monitor struct {
+	ID                 int32            `json:"id"`
+	UserID             int32            `json:"user_id"`
+	Name               string           `json:"name"`
+	Url                string           `json:"url"`
+	Method             string           `json:"method"`
+	IntervalSeconds    int32            `json:"interval_seconds"`
+	TimeoutSeconds     int32            `json:"timeout_seconds"`
+	Status             string           `json:"status"`
+	Headers            []byte           `json:"headers"`
+	Body               pgtype.Text      `json:"body"`
+	ExpectedStatusCode pgtype.Int4      `json:"expected_status_code"`
+	CreatedAt          pgtype.Timestamp `json:"created_at"`
+	UpdatedAt          pgtype.Timestamp `json:"updated_at"`
+}
+
+type MonitorCheck struct {
+	ID             int32            `json:"id"`
+	MonitorID      int32            `json:"monitor_id"`
+	Status         string           `json:"status"`
+	ResponseTimeMs pgtype.Int4      `json:"response_time_ms"`
+	StatusCode     pgtype.Int4      `json:"status_code"`
+	ErrorMessage   pgtype.Text      `json:"error_message"`
+	CheckedAt      pgtype.Timestamp `json:"checked_at"`
+}
+
 type User struct {
 	ID        int32            `json:"id"`
 	Email     string           `json:"email"`

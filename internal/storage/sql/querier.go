@@ -6,16 +6,52 @@ package storage
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	CountActiveMonitorsByUser(ctx context.Context, userID int32) (int64, error)
+	CountFailedMonitorChecks(ctx context.Context, monitorID int32) (int64, error)
+	CountMonitorChecks(ctx context.Context, monitorID int32) (int64, error)
+	CountMonitorsByUser(ctx context.Context, userID int32) (int64, error)
+	CountSuccessfulMonitorChecks(ctx context.Context, monitorID int32) (int64, error)
+	CreateMonitor(ctx context.Context, arg CreateMonitorParams) (Monitor, error)
+	CreateMonitorCheck(ctx context.Context, arg CreateMonitorCheckParams) (MonitorCheck, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteMonitor(ctx context.Context, arg DeleteMonitorParams) error
+	DeleteMonitorByID(ctx context.Context, id int32) error
+	DeleteMonitorCheck(ctx context.Context, id int32) error
+	DeleteMonitorChecksByMonitorID(ctx context.Context, monitorID int32) error
+	DeleteOldMonitorChecks(ctx context.Context, checkedAt pgtype.Timestamp) error
 	DeleteUser(ctx context.Context, id int32) error
+	GetAverageResponseTime(ctx context.Context, monitorID int32) (float64, error)
+	GetAverageResponseTimeByDateRange(ctx context.Context, arg GetAverageResponseTimeByDateRangeParams) (float64, error)
+	GetLatestMonitorCheck(ctx context.Context, monitorID int32) (MonitorCheck, error)
+	GetMonitor(ctx context.Context, id int32) (Monitor, error)
+	GetMonitorByID(ctx context.Context, arg GetMonitorByIDParams) (Monitor, error)
+	GetMonitorCheck(ctx context.Context, id int32) (MonitorCheck, error)
+	GetMonitorStats(ctx context.Context, monitorID int32) (GetMonitorStatsRow, error)
+	GetMonitorUptime(ctx context.Context, monitorID int32) (int32, error)
+	GetMonitorUptimeByDateRange(ctx context.Context, arg GetMonitorUptimeByDateRangeParams) (int32, error)
 	GetUser(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id int32) (User, error)
+	ListActiveMonitors(ctx context.Context) ([]Monitor, error)
+	ListFailedMonitorChecks(ctx context.Context, arg ListFailedMonitorChecksParams) ([]MonitorCheck, error)
+	ListMonitorChecks(ctx context.Context, arg ListMonitorChecksParams) ([]MonitorCheck, error)
+	ListMonitorChecksByDateRange(ctx context.Context, arg ListMonitorChecksByDateRangeParams) ([]MonitorCheck, error)
+	ListMonitors(ctx context.Context) ([]Monitor, error)
+	ListMonitorsByStatus(ctx context.Context, status string) ([]Monitor, error)
+	ListMonitorsByUser(ctx context.Context, userID int32) ([]Monitor, error)
+	ListMonitorsByUserAndStatus(ctx context.Context, arg ListMonitorsByUserAndStatusParams) ([]Monitor, error)
+	ListRecentMonitorChecks(ctx context.Context, arg ListRecentMonitorChecksParams) ([]MonitorCheck, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
+	MonitorExists(ctx context.Context, id int32) (bool, error)
+	UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (Monitor, error)
+	UpdateMonitorStatus(ctx context.Context, arg UpdateMonitorStatusParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UserExists(ctx context.Context, id int32) (bool, error)
+	UserOwnsMonitor(ctx context.Context, arg UserOwnsMonitorParams) (bool, error)
 }
 
 var _ Querier = (*Queries)(nil)
