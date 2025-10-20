@@ -204,19 +204,265 @@ func (s *Server) handleGetMonitorByID() http.Handler {
 
 //  ListMonitors,
 
-// ListMonitorsByUser,
+func (s *Server) ListMonitorsByUser() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-// ListActiveMonitors,
-// ListMonitorsByStatus,
+		userID := r.Context().Value("userID").(int)
 
-// ListMonitorsByUserAndStatus
+		ctx := r.Context()
 
-// UpdateMonitor,
-//
+		mon, err := s.store.ListMonitorsByUser(ctx, int32(userID))
+
+		if err != nil {
+			if isNotFound(err) {
+				respondError(w, r, http.StatusNotFound, ErrNotFound)
+				return
+			}
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		var responses []monitorResponse
+		for _, m := range mon {
+			resp, err := toMonitorResponse(m)
+			if err != nil {
+				respondError(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			responses = append(responses, resp)
+		}
+
+		respondJSON(w, r, responses)
+
+	})
+}
+
+func (s *Server) ListMonitorsByStatus() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		status := r.URL.Query().Get("status")
+		if status == "" {
+			respondError(w, r, http.StatusBadRequest, errors.New("status query parameter is required"))
+			return
+		}
+
+		userID := r.Context().Value("userID").(int)
+
+		ctx := r.Context()
+
+		mon, err := s.store.ListMonitorsByUserAndStatus(ctx, storage.ListMonitorsByUserAndStatusParams{
+			UserID: int32(userID),
+			Status: status,
+		})
+
+		if err != nil {
+			if isNotFound(err) {
+				respondError(w, r, http.StatusNotFound, ErrNotFound)
+				return
+			}
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		var responses []monitorResponse
+		for _, m := range mon {
+			resp, err := toMonitorResponse(m)
+			if err != nil {
+				respondError(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			responses = append(responses, resp)
+		}
+
+		respondJSON(w, r, responses)
+
+	})
+}
+
+type updateMonitorRequest struct {
+	Name               string         `json:"name"`
+	Url                string         `json:"url"`
+	Method             string         `json:"method"`
+	IntervalSeconds    int16          `json:"interval_seconds"`
+	TimeoutSeconds     int16          `json:"timeout_seconds"`
+	Headers            map[string]any `json:"headers"`
+	Body               string         `json:"body"`
+	ExpectedStatusCode int            `json:"expected_status_code"`
+}
+
+func (r updateMonitorRequest) Valid() error {
+	if r.Name == "" {
+		return errors.New("name is required")
+	}
+
+	if r.Url == "" {
+		return errors.New("url is required")
+	}
+
+	if r.Method == "" {
+		return errors.New("method is required")
+	}
+
+	if r.IntervalSeconds < 30 {
+		return errors.New("interval_seconds must be at least 30")
+	}
+
+	if r.TimeoutSeconds < 5 {
+		return errors.New("timeout_seconds must be at least 5")
+	}
+
+	if r.TimeoutSeconds >= r.IntervalSeconds {
+		return errors.New("timeout_seconds must be less than interval_seconds")
+	}
+
+	return nil
+}
+
+// UpdateMonitor
+func (s *Server) handleUpdateMonitor() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, ErrInvalidId)
+			return
+		}
+
+		userID := r.Context().Value("userID").(int)
+		ctx := r.Context()
+
+		req, err := decodeValid[updateMonitorRequest](r)
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		// Convert headers map to JSON bytes
+		var headersJSON []byte
+		if req.Headers != nil {
+			headersJSON, err = json.Marshal(req.Headers)
+			if err != nil {
+				respondError(w, r, http.StatusBadRequest, errors.New("invalid headers format"))
+				return
+			}
+		}
+
+		mon, err := s.store.UpdateMonitor(ctx, storage.UpdateMonitorParams{
+			ID:                 int32(id),
+			UserID:             int32(userID),
+			Name:               req.Name,
+			Url:                req.Url,
+			Method:             req.Method,
+			IntervalSeconds:    int32(req.IntervalSeconds),
+			TimeoutSeconds:     int32(req.TimeoutSeconds),
+			ExpectedStatusCode: pgtype.Int4{Int32: int32(req.ExpectedStatusCode), Valid: true},
+			Headers:            headersJSON,
+			Body:               pgtype.Text{String: req.Body, Valid: true},
+		})
+
+		if err != nil {
+			if isNotFound(err) {
+				respondError(w, r, http.StatusNotFound, ErrNotFound)
+				return
+			}
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		// Convert to response format
+		resp, err := toMonitorResponse(mon)
+		if err != nil {
+			respondError(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		respondJSON(w, r, resp)
+	})
+}
+
+type updateMonitorStatusRequest struct {
+	Status string `json:"status"`
+}
+
+func (r updateMonitorStatusRequest) Valid() error {
+	if r.Status == "" {
+		return errors.New("status is required")
+	}
+	return nil
+}
+
 // UpdateMonitorStatus
-// DeleteMonitor,
-// DeleteMonitorByID
-// MonitorExists,
-//  UserOwnsMonitor,
-//  CountMonitorsByUser,
-//  CountActiveMonitorsByUser
+func (s *Server) handleUpdateMonitorStatus() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, ErrInvalidId)
+			return
+		}
+
+		userID := r.Context().Value("userID").(int)
+		ctx := r.Context()
+
+		// Check if user owns the monitor
+		owns, err := s.store.UserOwnsMonitor(ctx, storage.UserOwnsMonitorParams{
+			ID:     int32(id),
+			UserID: int32(userID),
+		})
+
+		if err != nil {
+			respondError(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		if !owns {
+			respondError(w, r, http.StatusNotFound, ErrNotFound)
+			return
+		}
+
+		req, err := decodeValid[updateMonitorStatusRequest](r)
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		err = s.store.UpdateMonitorStatus(ctx, storage.UpdateMonitorStatusParams{
+			ID:     int32(id),
+			Status: req.Status,
+		})
+
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// DeleteMonitor
+func (s *Server) handleDeleteMonitor() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, ErrInvalidId)
+			return
+		}
+
+		userID := r.Context().Value("userID").(int)
+		ctx := r.Context()
+
+		err = s.store.DeleteMonitor(ctx, storage.DeleteMonitorParams{
+			ID:     int32(id),
+			UserID: int32(userID),
+		})
+
+		if err != nil {
+			if isNotFound(err) {
+				respondError(w, r, http.StatusNotFound, ErrNotFound)
+				return
+			}
+			respondError(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+}

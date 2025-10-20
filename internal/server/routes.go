@@ -18,7 +18,11 @@ func (s *Server) routes() http.Handler {
 
 	// Monitors
 	mux.Handle("POST /api/monitors", s.authMiddleware(s.handleCreateMonitor()))
+	mux.Handle("GET /api/monitors", s.authMiddleware(s.ListMonitorsByUser()))
 	mux.Handle("GET /api/monitors/{id}", s.authMiddleware(s.handleGetMonitorByID()))
+	mux.Handle("PUT /api/monitors/{id}", s.authMiddleware(s.handleUpdateMonitor()))
+	mux.Handle("PATCH /api/monitors/{id}/status", s.authMiddleware(s.handleUpdateMonitorStatus()))
+	mux.Handle("DELETE /api/monitors/{id}", s.authMiddleware(s.handleDeleteMonitor()))
 
 	return s.corsMiddleware(
 		s.loggingMiddleware(

@@ -22,7 +22,7 @@
 
 ### 📡 Monitor Management
 
-- [ ] CRUD endpoints for monitors
+- [x] CRUD endpoints for monitors
 - [ ] Pause/resume monitor
 - [ ] Link monitors to user/team
 
@@ -128,3 +128,5 @@
 - [ ] Payments tested
 - [ ] Email delivery verified
 - [ ] Performance acceptable
+
+
